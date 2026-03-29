@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/passkeycredential"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
@@ -42,6 +43,7 @@ type UserQuery struct {
 	withUsageLogs             *UsageLogQuery
 	withAttributeValues       *UserAttributeValueQuery
 	withPromoCodeUsages       *PromoCodeUsageQuery
+	withPasskeyCredentials    *PasskeyCredentialQuery
 	withUserAllowedGroups     *UserAllowedGroupQuery
 	modifiers                 []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
@@ -278,6 +280,28 @@ func (_q *UserQuery) QueryPromoCodeUsages() *PromoCodeUsageQuery {
 	return query
 }
 
+// QueryPasskeyCredentials chains the current query on the "passkey_credentials" edge.
+func (_q *UserQuery) QueryPasskeyCredentials() *PasskeyCredentialQuery {
+	query := (&PasskeyCredentialClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(passkeycredential.Table, passkeycredential.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.PasskeyCredentialsTable, user.PasskeyCredentialsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
 // QueryUserAllowedGroups chains the current query on the "user_allowed_groups" edge.
 func (_q *UserQuery) QueryUserAllowedGroups() *UserAllowedGroupQuery {
 	query := (&UserAllowedGroupClient{config: _q.config}).Query()
@@ -501,6 +525,7 @@ func (_q *UserQuery) Clone() *UserQuery {
 		withUsageLogs:             _q.withUsageLogs.Clone(),
 		withAttributeValues:       _q.withAttributeValues.Clone(),
 		withPromoCodeUsages:       _q.withPromoCodeUsages.Clone(),
+		withPasskeyCredentials:    _q.withPasskeyCredentials.Clone(),
 		withUserAllowedGroups:     _q.withUserAllowedGroups.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
@@ -607,6 +632,17 @@ func (_q *UserQuery) WithPromoCodeUsages(opts ...func(*PromoCodeUsageQuery)) *Us
 	return _q
 }
 
+// WithPasskeyCredentials tells the query-builder to eager-load the nodes that are connected to
+// the "passkey_credentials" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithPasskeyCredentials(opts ...func(*PasskeyCredentialQuery)) *UserQuery {
+	query := (&PasskeyCredentialClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withPasskeyCredentials = query
+	return _q
+}
+
 // WithUserAllowedGroups tells the query-builder to eager-load the nodes that are connected to
 // the "user_allowed_groups" edge. The optional arguments are used to configure the query builder of the edge.
 func (_q *UserQuery) WithUserAllowedGroups(opts ...func(*UserAllowedGroupQuery)) *UserQuery {
@@ -696,7 +732,7 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	var (
 		nodes       = []*User{}
 		_spec       = _q.querySpec()
-		loadedTypes = [10]bool{
+		loadedTypes = [11]bool{
 			_q.withAPIKeys != nil,
 			_q.withRedeemCodes != nil,
 			_q.withSubscriptions != nil,
@@ -706,6 +742,7 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 			_q.withUsageLogs != nil,
 			_q.withAttributeValues != nil,
 			_q.withPromoCodeUsages != nil,
+			_q.withPasskeyCredentials != nil,
 			_q.withUserAllowedGroups != nil,
 		}
 	)
@@ -792,6 +829,15 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 		if err := _q.loadPromoCodeUsages(ctx, query, nodes,
 			func(n *User) { n.Edges.PromoCodeUsages = []*PromoCodeUsage{} },
 			func(n *User, e *PromoCodeUsage) { n.Edges.PromoCodeUsages = append(n.Edges.PromoCodeUsages, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withPasskeyCredentials; query != nil {
+		if err := _q.loadPasskeyCredentials(ctx, query, nodes,
+			func(n *User) { n.Edges.PasskeyCredentials = []*PasskeyCredential{} },
+			func(n *User, e *PasskeyCredential) {
+				n.Edges.PasskeyCredentials = append(n.Edges.PasskeyCredentials, e)
+			}); err != nil {
 			return nil, err
 		}
 	}
@@ -1097,6 +1143,36 @@ func (_q *UserQuery) loadPromoCodeUsages(ctx context.Context, query *PromoCodeUs
 	}
 	query.Where(predicate.PromoCodeUsage(func(s *sql.Selector) {
 		s.Where(sql.InValues(s.C(user.PromoCodeUsagesColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadPasskeyCredentials(ctx context.Context, query *PasskeyCredentialQuery, nodes []*User, init func(*User), assign func(*User, *PasskeyCredential)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(passkeycredential.FieldUserID)
+	}
+	query.Where(predicate.PasskeyCredential(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.PasskeyCredentialsColumn), fks...))
 	}))
 	neighbors, err := query.All(ctx)
 	if err != nil {
