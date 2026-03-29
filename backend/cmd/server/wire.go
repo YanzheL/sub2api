@@ -31,6 +31,8 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	wire.Build(
 		// Infrastructure layer ProviderSets
 		config.ProviderSet,
+		provideAPIKeyService,
+		provideOpenAIOAuthService,
 
 		// Business layer ProviderSets
 		repository.ProviderSet,
@@ -67,6 +69,27 @@ func provideServiceBuildInfo(buildInfo handler.BuildInfo) service.BuildInfo {
 	}
 }
 
+func provideAPIKeyService(
+	apiKeyRepo service.APIKeyRepository,
+	userRepo service.UserRepository,
+	groupRepo service.GroupRepository,
+	userSubRepo service.UserSubscriptionRepository,
+	userGroupRateRepo service.UserGroupRateRepository,
+	cache service.APIKeyCache,
+	billingCache service.BillingCache,
+	cfg *config.Config,
+) *service.APIKeyService {
+	svc := service.NewAPIKeyService(apiKeyRepo, userRepo, groupRepo, userSubRepo, userGroupRateRepo, cache, cfg)
+	svc.SetRateLimitCacheInvalidator(billingCache)
+	return svc
+}
+
+func provideOpenAIOAuthService(proxyRepo service.ProxyRepository, oauthClient service.OpenAIOAuthClient, privacyClientFactory service.PrivacyClientFactory) *service.OpenAIOAuthService {
+	svc := service.NewOpenAIOAuthService(proxyRepo, oauthClient)
+	svc.SetPrivacyClientFactory(privacyClientFactory)
+	return svc
+}
+
 func provideCleanup(
 	entClient *ent.Client,
 	rdb *redis.Client,
@@ -76,7 +99,6 @@ func provideCleanup(
 	opsCleanup *service.OpsCleanupService,
 	opsScheduledReport *service.OpsScheduledReportService,
 	opsSystemLogSink *service.OpsSystemLogSink,
-	soraMediaCleanup *service.SoraMediaCleanupService,
 	schedulerSnapshot *service.SchedulerSnapshotService,
 	tokenRefresh *service.TokenRefreshService,
 	accountExpiry *service.AccountExpiryService,
@@ -122,12 +144,6 @@ func provideCleanup(
 			{"OpsSystemLogSink", func() error {
 				if opsSystemLogSink != nil {
 					opsSystemLogSink.Stop()
-				}
-				return nil
-			}},
-			{"SoraMediaCleanupService", func() error {
-				if soraMediaCleanup != nil {
-					soraMediaCleanup.Stop()
 				}
 				return nil
 			}},

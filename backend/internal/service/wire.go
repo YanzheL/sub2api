@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"time"
 
+	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/google/wire"
@@ -378,12 +379,19 @@ func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupReposit
 	return svc
 }
 
+func ProvidePasskeyService(settingService *SettingService, cache AuthStateCache, userRepo UserRepository, entClient *dbent.Client, recentAuthService *RecentAuthService) *PasskeyService {
+	svc := NewPasskeyService(settingService, cache)
+	svc.userRepo = userRepo
+	svc.recentAuthService = recentAuthService
+	svc.credentialStore = newPasskeyCredentialStore(entClient)
+	return svc
+}
+
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
 	// Core services
 	NewAuthService,
 	NewUserService,
-	NewAPIKeyService,
 	ProvideAPIKeyAuthCacheInvalidator,
 	NewGroupService,
 	NewAccountService,
@@ -400,7 +408,6 @@ var ProviderSet = wire.NewSet(
 	NewGatewayService,
 	NewOpenAIGatewayService,
 	NewOAuthService,
-	NewOpenAIOAuthService,
 	NewGeminiOAuthService,
 	NewGeminiQuotaService,
 	NewCompositeTokenCacheInvalidator,
@@ -449,6 +456,8 @@ var ProviderSet = wire.NewSet(
 	NewUserAttributeService,
 	NewUsageCache,
 	NewTotpService,
+	ProvidePasskeyService,
+	NewRecentAuthService,
 	NewErrorPassthroughService,
 	NewTLSFingerprintProfileService,
 	NewDigestSessionStore,
