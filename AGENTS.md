@@ -1,8 +1,8 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-03-29 20:34:51 CST
-**Commit:** fdd8499f
-**Branch:** opencode/curious-cactus
+**Generated:** 2026-03-29 21:13:36 CST
+**Commit:** 941a44da
+**Branch:** feat/agents-md
 
 ## OVERVIEW
 Sub2API is an AI API gateway platform: Go backend for routing, billing, auth, and persistence; Vue frontend for admin/user UI; Docker/systemd deploy assets for self-hosting.
@@ -31,7 +31,9 @@ curious-cactus/
 | Frontend bootstrap | `frontend/src/main.ts` | Injected config before mount; router/i18n setup |
 | Frontend routing | `frontend/src/router/index.ts` | Lazy routes, auth/admin/backend-mode guards |
 | Admin API/UI | `frontend/src/api/admin/`, `frontend/src/views/admin/` | Covered by `frontend/AGENTS.md` |
-| Deployment | `deploy/README.md`, `deploy/docker-compose.local.yml`, `deploy/install.sh` | Root file covers deploy-specific lookup |
+| Deployment / self-hosting | `deploy/` | See `deploy/AGENTS.md` for compose variants, install scripts, and socket/path gotchas |
+| Repo tooling | `tools/` | Small helper scripts such as audit/exception checks |
+| Product/API docs | `docs/` | Start here for integration-facing docs before editing code |
 
 ## CODE MAP
 | Symbol | Type | Location | Role |
@@ -84,4 +86,4 @@ cd frontend && pnpm run test:run
 - First-run setup can happen through the setup wizard or Docker auto-setup; do not assume a ready config exists.
 - For self-hosted stability, keep `JWT_SECRET` and `TOTP_ENCRYPTION_KEY` fixed instead of letting them change every restart.
 - When fronting Sub2API with Nginx for Codex CLI traffic, enable `underscores_in_headers on;`.
-- Child instruction files exist at `backend/`, `backend/migrations/`, `backend/ent/schema/`, and `frontend/`; prefer the nearest one.
+- Child instruction files exist at `backend/`, `backend/migrations/`, `backend/ent/schema/`, `frontend/`, and `deploy/`; prefer the nearest one.
