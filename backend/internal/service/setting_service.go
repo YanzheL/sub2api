@@ -147,6 +147,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyPasswordResetEnabled,
 		SettingKeyInvitationCodeEnabled,
 		SettingKeyTotpEnabled,
+		SettingKeyPasskeyEnabled,
 		SettingKeyTurnstileEnabled,
 		SettingKeyTurnstileSiteKey,
 		SettingKeySiteName,
@@ -192,6 +193,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		PasswordResetEnabled:             passwordResetEnabled,
 		InvitationCodeEnabled:            settings[SettingKeyInvitationCodeEnabled] == "true",
 		TotpEnabled:                      settings[SettingKeyTotpEnabled] == "true",
+		PasskeyEnabled:                   settings[SettingKeyPasskeyEnabled] == "true",
 		TurnstileEnabled:                 settings[SettingKeyTurnstileEnabled] == "true",
 		TurnstileSiteKey:                 settings[SettingKeyTurnstileSiteKey],
 		SiteName:                         s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
@@ -239,6 +241,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		PasswordResetEnabled             bool            `json:"password_reset_enabled"`
 		InvitationCodeEnabled            bool            `json:"invitation_code_enabled"`
 		TotpEnabled                      bool            `json:"totp_enabled"`
+		PasskeyEnabled                   bool            `json:"passkey_enabled"`
 		TurnstileEnabled                 bool            `json:"turnstile_enabled"`
 		TurnstileSiteKey                 string          `json:"turnstile_site_key,omitempty"`
 		SiteName                         string          `json:"site_name"`
@@ -264,6 +267,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		PasswordResetEnabled:             settings.PasswordResetEnabled,
 		InvitationCodeEnabled:            settings.InvitationCodeEnabled,
 		TotpEnabled:                      settings.TotpEnabled,
+		PasskeyEnabled:                   settings.PasskeyEnabled,
 		TurnstileEnabled:                 settings.TurnstileEnabled,
 		TurnstileSiteKey:                 settings.TurnstileSiteKey,
 		SiteName:                         settings.SiteName,
@@ -416,6 +420,14 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 		normalizedWhitelist = []string{}
 	}
 	settings.RegistrationEmailSuffixWhitelist = normalizedWhitelist
+	normalizedPasskeyAllowedOrigins, err := NormalizePasskeyAllowedOrigins(settings.PasskeyAllowedOrigins)
+	if err != nil {
+		return infraerrors.BadRequest("INVALID_PASSKEY_ALLOWED_ORIGINS", err.Error())
+	}
+	if normalizedPasskeyAllowedOrigins == nil {
+		normalizedPasskeyAllowedOrigins = []string{}
+	}
+	settings.PasskeyAllowedOrigins = normalizedPasskeyAllowedOrigins
 
 	updates := make(map[string]string)
 
@@ -432,6 +444,14 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	updates[SettingKeyFrontendURL] = settings.FrontendURL
 	updates[SettingKeyInvitationCodeEnabled] = strconv.FormatBool(settings.InvitationCodeEnabled)
 	updates[SettingKeyTotpEnabled] = strconv.FormatBool(settings.TotpEnabled)
+	updates[SettingKeyPasskeyEnabled] = strconv.FormatBool(settings.PasskeyEnabled)
+	updates[SettingKeyPasskeyRPID] = strings.TrimSpace(settings.PasskeyRPID)
+	updates[SettingKeyPasskeyRPName] = strings.TrimSpace(settings.PasskeyRPName)
+	passkeyAllowedOriginsJSON, err := json.Marshal(settings.PasskeyAllowedOrigins)
+	if err != nil {
+		return fmt.Errorf("marshal passkey allowed origins: %w", err)
+	}
+	updates[SettingKeyPasskeyAllowedOrigins] = string(passkeyAllowedOriginsJSON)
 
 	// 邮件服务设置（只有非空才更新密码）
 	updates[SettingKeySMTPHost] = settings.SMTPHost
@@ -747,6 +767,14 @@ func (s *SettingService) IsTotpEnabled(ctx context.Context) bool {
 	return value == "true"
 }
 
+func (s *SettingService) IsPasskeyEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyPasskeyEnabled)
+	if err != nil {
+		return false // 默认关闭
+	}
+	return value == "true"
+}
+
 // IsTotpEncryptionKeyConfigured 检查 TOTP 加密密钥是否已手动配置
 // 只有手动配置了密钥才允许在管理后台启用 TOTP 功能
 func (s *SettingService) IsTotpEncryptionKeyConfigured() bool {
@@ -813,6 +841,10 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyEmailVerifyEnabled:               "false",
 		SettingKeyRegistrationEmailSuffixWhitelist: "[]",
 		SettingKeyPromoCodeEnabled:                 "true", // 默认启用优惠码功能
+		SettingKeyPasskeyEnabled:                   "false",
+		SettingKeyPasskeyRPID:                      "",
+		SettingKeyPasskeyRPName:                    "",
+		SettingKeyPasskeyAllowedOrigins:            "[]",
 		SettingKeySiteName:                         "Sub2API",
 		SettingKeySiteLogo:                         "",
 		SettingKeyPurchaseSubscriptionEnabled:      "false",
@@ -854,6 +886,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 // parseSettings 解析设置到结构体
 func (s *SettingService) parseSettings(settings map[string]string) *SystemSettings {
 	emailVerifyEnabled := settings[SettingKeyEmailVerifyEnabled] == "true"
+	passkeyRPID, passkeyRPName, passkeyAllowedOrigins := s.resolvePasskeyRPConfig(settings)
 	result := &SystemSettings{
 		RegistrationEnabled:              settings[SettingKeyRegistrationEnabled] == "true",
 		EmailVerifyEnabled:               emailVerifyEnabled,
@@ -863,6 +896,10 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		FrontendURL:                      settings[SettingKeyFrontendURL],
 		InvitationCodeEnabled:            settings[SettingKeyInvitationCodeEnabled] == "true",
 		TotpEnabled:                      settings[SettingKeyTotpEnabled] == "true",
+		PasskeyEnabled:                   settings[SettingKeyPasskeyEnabled] == "true",
+		PasskeyRPID:                      passkeyRPID,
+		PasskeyRPName:                    passkeyRPName,
+		PasskeyAllowedOrigins:            passkeyAllowedOrigins,
 		SMTPHost:                         settings[SettingKeySMTPHost],
 		SMTPUsername:                     settings[SettingKeySMTPUsername],
 		SMTPFrom:                         settings[SettingKeySMTPFrom],
@@ -1001,6 +1038,190 @@ func isFalseSettingValue(value string) bool {
 	default:
 		return false
 	}
+}
+
+var passkeyDevelopmentAllowedOrigins = []string{
+	"http://localhost:5173",
+	"http://127.0.0.1:5173",
+	"http://localhost:8080",
+	"http://127.0.0.1:8080",
+}
+
+func (s *SettingService) resolvePasskeyRPConfig(settings map[string]string) (string, string, []string) {
+	explicitRPID := strings.TrimSpace(settings[SettingKeyPasskeyRPID])
+	explicitRPName := strings.TrimSpace(settings[SettingKeyPasskeyRPName])
+	explicitAllowedOrigins := ParsePasskeyAllowedOrigins(settings[SettingKeyPasskeyAllowedOrigins])
+
+	frontendURL := strings.TrimSpace(settings[SettingKeyFrontendURL])
+	if frontendURL == "" && s.cfg != nil {
+		frontendURL = strings.TrimSpace(s.cfg.Server.FrontendURL)
+	}
+
+	rpID := explicitRPID
+	rpName := explicitRPName
+	allowedOrigins := clonePasskeyStringSlice(explicitAllowedOrigins)
+
+	derivedRPID, derivedOrigin := derivePasskeyRPIDAndOrigin(frontendURL)
+	if rpID == "" {
+		rpID = derivedRPID
+	}
+	if rpName == "" {
+		rpName = derivedRPID
+	}
+	if len(allowedOrigins) == 0 && derivedOrigin != "" {
+		allowedOrigins = []string{derivedOrigin}
+	}
+
+	if s.isDevelopmentMode() {
+		if rpID == "" {
+			rpID = "localhost"
+		}
+		if rpName == "" {
+			rpName = "localhost"
+		}
+		if len(allowedOrigins) == 0 {
+			allowedOrigins = clonePasskeyStringSlice(passkeyDevelopmentAllowedOrigins)
+		}
+	}
+
+	if rpName == "" {
+		rpName = s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API")
+	}
+	if len(allowedOrigins) == 0 {
+		allowedOrigins = []string{}
+	}
+
+	return rpID, rpName, allowedOrigins
+}
+
+func (s *SettingService) isDevelopmentMode() bool {
+	if s == nil || s.cfg == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(s.cfg.Server.Mode), "debug")
+}
+
+func derivePasskeyRPIDAndOrigin(frontendURL string) (string, string) {
+	frontendURL = strings.TrimSpace(frontendURL)
+	if frontendURL == "" {
+		return "", ""
+	}
+
+	u, err := url.Parse(frontendURL)
+	if err != nil || u.Host == "" {
+		return "", ""
+	}
+
+	scheme := strings.ToLower(strings.TrimSpace(u.Scheme))
+	if scheme != "http" && scheme != "https" {
+		return "", ""
+	}
+
+	rpID := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(u.Hostname())), ".")
+	if rpID == "" {
+		return "", ""
+	}
+
+	origin := scheme + "://" + strings.ToLower(u.Host)
+	return rpID, origin
+}
+
+func NormalizePasskeyAllowedOrigins(origins []string) ([]string, error) {
+	if len(origins) == 0 {
+		return nil, nil
+	}
+
+	normalized := make([]string, 0, len(origins))
+	seen := make(map[string]struct{}, len(origins))
+	for _, raw := range origins {
+		origin, err := parsePasskeyOrigin(raw)
+		if err != nil {
+			return nil, err
+		}
+		if origin == "" {
+			continue
+		}
+		if _, exists := seen[origin]; exists {
+			continue
+		}
+		seen[origin] = struct{}{}
+		normalized = append(normalized, origin)
+	}
+
+	return normalized, nil
+}
+
+func ParsePasskeyAllowedOrigins(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+
+	origins := make([]string, 0)
+	if err := json.Unmarshal([]byte(raw), &origins); err != nil {
+		var single string
+		if err := json.Unmarshal([]byte(raw), &single); err == nil {
+			origins = []string{single}
+		} else {
+			origins = []string{raw}
+		}
+	}
+
+	normalized := make([]string, 0, len(origins))
+	seen := make(map[string]struct{}, len(origins))
+	for _, origin := range origins {
+		parsed, err := parsePasskeyOrigin(origin)
+		if err != nil || parsed == "" {
+			continue
+		}
+		if _, exists := seen[parsed]; exists {
+			continue
+		}
+		seen[parsed] = struct{}{}
+		normalized = append(normalized, parsed)
+	}
+
+	return normalized
+}
+
+func parsePasskeyOrigin(raw string) (string, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "", nil
+	}
+
+	u, err := url.Parse(value)
+	if err != nil {
+		return "", fmt.Errorf("invalid origin %q", value)
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("origin %q must include host", value)
+	}
+
+	scheme := strings.ToLower(strings.TrimSpace(u.Scheme))
+	if scheme != "http" && scheme != "https" {
+		return "", fmt.Errorf("origin %q must use http or https scheme", value)
+	}
+	if u.User != nil {
+		return "", fmt.Errorf("origin %q must not include userinfo", value)
+	}
+	if u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("origin %q must not include query or fragment", value)
+	}
+	if u.Path != "" && u.Path != "/" {
+		return "", fmt.Errorf("origin %q must not include path", value)
+	}
+
+	return scheme + "://" + strings.ToLower(u.Host), nil
+}
+
+func clonePasskeyStringSlice(items []string) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]string, len(items))
+	copy(out, items)
+	return out
 }
 
 func parseDefaultSubscriptions(raw string) []DefaultSubscriptionSetting {

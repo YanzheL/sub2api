@@ -82,6 +82,10 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		InvitationCodeEnabled:                settings.InvitationCodeEnabled,
 		TotpEnabled:                          settings.TotpEnabled,
 		TotpEncryptionKeyConfigured:          h.settingService.IsTotpEncryptionKeyConfigured(),
+		PasskeyEnabled:                       settings.PasskeyEnabled,
+		PasskeyRPID:                          settings.PasskeyRPID,
+		PasskeyRPName:                        settings.PasskeyRPName,
+		PasskeyAllowedOrigins:                settings.PasskeyAllowedOrigins,
 		SMTPHost:                             settings.SMTPHost,
 		SMTPPort:                             settings.SMTPPort,
 		SMTPUsername:                         settings.SMTPUsername,
@@ -134,14 +138,18 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 // UpdateSettingsRequest 更新设置请求
 type UpdateSettingsRequest struct {
 	// 注册设置
-	RegistrationEnabled              bool     `json:"registration_enabled"`
-	EmailVerifyEnabled               bool     `json:"email_verify_enabled"`
-	RegistrationEmailSuffixWhitelist []string `json:"registration_email_suffix_whitelist"`
-	PromoCodeEnabled                 bool     `json:"promo_code_enabled"`
-	PasswordResetEnabled             bool     `json:"password_reset_enabled"`
-	FrontendURL                      string   `json:"frontend_url"`
-	InvitationCodeEnabled            bool     `json:"invitation_code_enabled"`
-	TotpEnabled                      bool     `json:"totp_enabled"` // TOTP 双因素认证
+	RegistrationEnabled              bool      `json:"registration_enabled"`
+	EmailVerifyEnabled               bool      `json:"email_verify_enabled"`
+	RegistrationEmailSuffixWhitelist []string  `json:"registration_email_suffix_whitelist"`
+	PromoCodeEnabled                 bool      `json:"promo_code_enabled"`
+	PasswordResetEnabled             bool      `json:"password_reset_enabled"`
+	FrontendURL                      string    `json:"frontend_url"`
+	InvitationCodeEnabled            bool      `json:"invitation_code_enabled"`
+	TotpEnabled                      bool      `json:"totp_enabled"` // TOTP 双因素认证
+	PasskeyEnabled                   *bool     `json:"passkey_enabled"`
+	PasskeyRPID                      *string   `json:"passkey_rp_id"`
+	PasskeyRPName                    *string   `json:"passkey_rp_name"`
+	PasskeyAllowedOrigins            *[]string `json:"passkey_allowed_origins"`
 
 	// 邮件服务设置
 	SMTPHost     string `json:"smtp_host"`
@@ -505,6 +513,26 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		})
 	}
 
+	passkeyEnabled := previousSettings.PasskeyEnabled
+	if req.PasskeyEnabled != nil {
+		passkeyEnabled = *req.PasskeyEnabled
+	}
+
+	passkeyRPID := previousSettings.PasskeyRPID
+	if req.PasskeyRPID != nil {
+		passkeyRPID = strings.TrimSpace(*req.PasskeyRPID)
+	}
+
+	passkeyRPName := previousSettings.PasskeyRPName
+	if req.PasskeyRPName != nil {
+		passkeyRPName = strings.TrimSpace(*req.PasskeyRPName)
+	}
+
+	passkeyAllowedOrigins := append([]string(nil), previousSettings.PasskeyAllowedOrigins...)
+	if req.PasskeyAllowedOrigins != nil {
+		passkeyAllowedOrigins = append([]string(nil), (*req.PasskeyAllowedOrigins)...)
+	}
+
 	// 验证最低版本号格式（空字符串=禁用，或合法 semver）
 	if req.MinClaudeCodeVersion != "" {
 		if !semverPattern.MatchString(req.MinClaudeCodeVersion) {
@@ -538,6 +566,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		FrontendURL:                      req.FrontendURL,
 		InvitationCodeEnabled:            req.InvitationCodeEnabled,
 		TotpEnabled:                      req.TotpEnabled,
+		PasskeyEnabled:                   passkeyEnabled,
+		PasskeyRPID:                      passkeyRPID,
+		PasskeyRPName:                    passkeyRPName,
+		PasskeyAllowedOrigins:            passkeyAllowedOrigins,
 		SMTPHost:                         req.SMTPHost,
 		SMTPPort:                         req.SMTPPort,
 		SMTPUsername:                     req.SMTPUsername,
@@ -647,6 +679,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		InvitationCodeEnabled:                updatedSettings.InvitationCodeEnabled,
 		TotpEnabled:                          updatedSettings.TotpEnabled,
 		TotpEncryptionKeyConfigured:          h.settingService.IsTotpEncryptionKeyConfigured(),
+		PasskeyEnabled:                       updatedSettings.PasskeyEnabled,
+		PasskeyRPID:                          updatedSettings.PasskeyRPID,
+		PasskeyRPName:                        updatedSettings.PasskeyRPName,
+		PasskeyAllowedOrigins:                updatedSettings.PasskeyAllowedOrigins,
 		SMTPHost:                             updatedSettings.SMTPHost,
 		SMTPPort:                             updatedSettings.SMTPPort,
 		SMTPUsername:                         updatedSettings.SMTPUsername,
@@ -717,7 +753,7 @@ func (h *SettingHandler) auditSettingsUpdate(c *gin.Context, before *service.Sys
 }
 
 func diffSettings(before *service.SystemSettings, after *service.SystemSettings, req UpdateSettingsRequest) []string {
-	changed := make([]string, 0, 20)
+	changed := make([]string, 0, 24)
 	if before.RegistrationEnabled != after.RegistrationEnabled {
 		changed = append(changed, "registration_enabled")
 	}
@@ -735,6 +771,18 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.TotpEnabled != after.TotpEnabled {
 		changed = append(changed, "totp_enabled")
+	}
+	if before.PasskeyEnabled != after.PasskeyEnabled {
+		changed = append(changed, "passkey_enabled")
+	}
+	if before.PasskeyRPID != after.PasskeyRPID {
+		changed = append(changed, "passkey_rp_id")
+	}
+	if before.PasskeyRPName != after.PasskeyRPName {
+		changed = append(changed, "passkey_rp_name")
+	}
+	if !equalStringSlice(before.PasskeyAllowedOrigins, after.PasskeyAllowedOrigins) {
+		changed = append(changed, "passkey_allowed_origins")
 	}
 	if before.SMTPHost != after.SMTPHost {
 		changed = append(changed, "smtp_host")
