@@ -367,6 +367,8 @@ export default {
     signUp: 'Sign up',
     processing: 'Processing...',
     continue: 'Continue',
+    continueWithPasskey: 'Continue with passkey',
+    orContinueWithEmail: 'or continue with email',
     rememberMe: 'Remember me',
     dontHaveAccount: "Don't have an account?",
     alreadyHaveAccount: 'Already have an account?',
@@ -382,6 +384,7 @@ export default {
     passwordRequired: 'Password is required',
     passwordMinLength: 'Password must be at least 6 characters',
     loginFailed: 'Login failed. Please check your credentials and try again.',
+    passkeyLoginFailed: 'Passkey login failed. Please try again or use another method.',
     registrationFailed: 'Registration failed. Please try again.',
     emailSuffixNotAllowed: 'This email domain is not allowed for registration.',
     emailSuffixNotAllowedWithAllowed:
