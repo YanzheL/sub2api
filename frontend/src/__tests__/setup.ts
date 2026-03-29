@@ -12,21 +12,21 @@ function createStorageMock(): Storage {
     get length() {
       return store.size
     },
-    clear() {
+    clear: vi.fn(() => {
       store.clear()
-    },
-    getItem(key: string) {
+    }),
+    getItem: vi.fn((key: string) => {
       return store.has(key) ? store.get(key)! : null
-    },
-    key(index: number) {
+    }),
+    key: vi.fn((index: number) => {
       return Array.from(store.keys())[index] ?? null
-    },
-    removeItem(key: string) {
+    }),
+    removeItem: vi.fn((key: string) => {
       store.delete(key)
-    },
-    setItem(key: string, value: string) {
+    }),
+    setItem: vi.fn((key: string, value: string) => {
       store.set(key, String(value))
-    }
+    })
   }
 }
 
