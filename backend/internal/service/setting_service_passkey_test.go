@@ -11,7 +11,9 @@ import (
 )
 
 type passkeySettingsRepoStub struct {
-	all map[string]string
+	all             map[string]string
+	setMultipleCall int
+	setMultipleVals map[string]string
 }
 
 func (s *passkeySettingsRepoStub) Get(ctx context.Context, key string) (*Setting, error) {
@@ -19,7 +21,10 @@ func (s *passkeySettingsRepoStub) Get(ctx context.Context, key string) (*Setting
 }
 
 func (s *passkeySettingsRepoStub) GetValue(ctx context.Context, key string) (string, error) {
-	panic("unexpected GetValue call")
+	if value, ok := s.all[key]; ok {
+		return value, nil
+	}
+	return "", ErrSettingNotFound
 }
 
 func (s *passkeySettingsRepoStub) Set(ctx context.Context, key, value string) error {
@@ -31,7 +36,12 @@ func (s *passkeySettingsRepoStub) GetMultiple(ctx context.Context, keys []string
 }
 
 func (s *passkeySettingsRepoStub) SetMultiple(ctx context.Context, settings map[string]string) error {
-	panic("unexpected SetMultiple call")
+	s.setMultipleCall++
+	s.setMultipleVals = make(map[string]string, len(settings))
+	for k, v := range settings {
+		s.setMultipleVals[k] = v
+	}
+	return nil
 }
 
 func (s *passkeySettingsRepoStub) GetAll(ctx context.Context) (map[string]string, error) {
@@ -110,4 +120,20 @@ func TestSettingService_GetAllSettings_PasskeyRPConfig_DoesNotUseLocalhostDefaul
 	require.Equal(t, "", settings.PasskeyRPID)
 	require.Equal(t, "Sub2API", settings.PasskeyRPName)
 	require.Empty(t, settings.PasskeyAllowedOrigins)
+}
+
+func TestSettingService_InitializeDefaultSettings_EnablesPasskeysByDefault(t *testing.T) {
+	repo := &passkeySettingsRepoStub{all: map[string]string{}}
+	svc := NewSettingService(repo, &config.Config{
+		Default: config.DefaultConfig{
+			UserConcurrency: 3,
+			UserBalance:     12.5,
+		},
+	})
+
+	err := svc.InitializeDefaultSettings(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.setMultipleCall)
+	require.Equal(t, "true", repo.setMultipleVals[SettingKeyPasskeyEnabled])
+	require.Equal(t, "true", repo.setMultipleVals[SettingKeyRegistrationEnabled])
 }

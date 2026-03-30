@@ -841,7 +841,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyEmailVerifyEnabled:               "false",
 		SettingKeyRegistrationEmailSuffixWhitelist: "[]",
 		SettingKeyPromoCodeEnabled:                 "true", // 默认启用优惠码功能
-		SettingKeyPasskeyEnabled:                   "false",
+		SettingKeyPasskeyEnabled:                   "true",
 		SettingKeyPasskeyRPID:                      "",
 		SettingKeyPasskeyRPName:                    "",
 		SettingKeyPasskeyAllowedOrigins:            "[]",
