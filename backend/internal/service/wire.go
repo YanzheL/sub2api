@@ -384,6 +384,7 @@ func ProvidePasskeyService(settingService *SettingService, cache AuthStateCache,
 	svc.userRepo = userRepo
 	svc.recentAuthService = recentAuthService
 	svc.credentialStore = newPasskeyCredentialStore(entClient)
+	svc.SetPasskeyAAGUIDMetadataCache(loadOptionalPasskeyAAGUIDMetadataCacheFromEnv())
 	return svc
 }
 

@@ -176,13 +176,14 @@ type passkeyWebAuthnUser struct {
 }
 
 type PasskeyService struct {
-	settingService    *SettingService
-	cache             AuthStateCache
-	userRepo          UserRepository
-	recentAuthService *RecentAuthService
-	credentialStore   PasskeyCredentialStore
-	webauthnFactory   func(context.Context) (passkeyWebAuthnClient, error)
-	now               func() time.Time
+	settingService       *SettingService
+	cache                AuthStateCache
+	userRepo             UserRepository
+	recentAuthService    *RecentAuthService
+	credentialStore      PasskeyCredentialStore
+	friendlyNameResolver *passkeyFriendlyNameResolver
+	webauthnFactory      func(context.Context) (passkeyWebAuthnClient, error)
+	now                  func() time.Time
 
 	mu          sync.RWMutex
 	cachedCfg   PasskeyRPConfig
@@ -192,6 +193,7 @@ type PasskeyService struct {
 
 func NewPasskeyService(settingService *SettingService, cache AuthStateCache) *PasskeyService {
 	svc := &PasskeyService{settingService: settingService, cache: cache}
+	svc.friendlyNameResolver = newPasskeyFriendlyNameResolver(nil)
 	svc.now = func() time.Time {
 		return time.Now().UTC()
 	}
@@ -433,16 +435,17 @@ func (s *PasskeyService) FinishRegistration(ctx context.Context, userID int64, f
 		return nil, ErrPasskeyCredentialExists
 	}
 
+	aaguid := encodePasskeyAAGUID(credential.Authenticator.AAGUID)
 	record := &PasskeyCredentialRecord{
 		UserID:         userID,
 		CredentialID:   storedCredentialID,
 		PublicKey:      encodePasskeyBinary(credential.PublicKey),
 		SignCount:      int64(credential.Authenticator.SignCount),
 		Transports:     passkeyTransportsToStrings(credential.Transport),
-		AAGUID:         encodePasskeyAAGUID(credential.Authenticator.AAGUID),
+		AAGUID:         aaguid,
 		BackupEligible: credential.Flags.BackupEligible,
 		BackupState:    credential.Flags.BackupState,
-		FriendlyName:   passkeyFriendlyName(friendlyName, s.currentTime()),
+		FriendlyName:   s.resolvePasskeyFriendlyName(ctx, friendlyName, aaguid),
 	}
 
 	if err := s.createCredential(ctx, record); err != nil {
@@ -1095,11 +1098,25 @@ func (s *PasskeyService) getWebAuthnClient(ctx context.Context) (passkeyWebAuthn
 	return s.GetWebAuthn(ctx)
 }
 
+func (s *PasskeyService) SetPasskeyAAGUIDMetadataCache(metadataCache PasskeyAAGUIDMetadataCache) {
+	if s == nil {
+		return
+	}
+	s.friendlyNameResolver = newPasskeyFriendlyNameResolver(metadataCache)
+}
+
 func (s *PasskeyService) currentTime() time.Time {
 	if s.now != nil {
 		return s.now().UTC()
 	}
 	return time.Now().UTC()
+}
+
+func (s *PasskeyService) resolvePasskeyFriendlyName(ctx context.Context, providedFriendlyName, aaguid string) string {
+	if s != nil && s.friendlyNameResolver != nil {
+		return s.friendlyNameResolver.Resolve(ctx, providedFriendlyName, aaguid, s.currentTime())
+	}
+	return passkeyFriendlyName(providedFriendlyName, s.currentTime())
 }
 
 func passkeyRecordsToWebAuthnCredentials(records []*PasskeyCredentialRecord) ([]webauthn.Credential, error) {

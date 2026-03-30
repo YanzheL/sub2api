@@ -725,6 +725,64 @@ func TestPasskeyService_BeginAndFinishRegistration_HappyPath(t *testing.T) {
 	require.Nil(t, store.lastCreated.LastUsedAt)
 }
 
+func TestPasskeyService_FinishRegistration_UsesCuratedAAGUIDFriendlyName(t *testing.T) {
+	fixedNow := time.Date(2026, 3, 29, 10, 55, 0, 0, time.UTC)
+	svc, _, store, webauthnClient, user := newPasskeyEnrollmentServiceForTest(t, fixedNow)
+	require.NoError(t, svc.recentAuthService.IssueRecentAuth(context.Background(), user.ID, RecentAuthMethodPassword))
+
+	bitwardenAAGUID := uuid.MustParse(passkeyBitwardenAAGUID)
+	webauthnClient.finishCredential = &webauthn.Credential{
+		ID:        []byte("bitwarden-credential-id"),
+		PublicKey: []byte("bitwarden-public-key"),
+		Authenticator: webauthn.Authenticator{
+			AAGUID: bitwardenAAGUID[:],
+		},
+	}
+
+	beginResult, err := svc.BeginRegistration(context.Background(), user.ID)
+	require.NoError(t, err)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/auth/passkeys/register/finish", bytes.NewBufferString(`{"id":"credential"}`))
+	request.Header.Set("Content-Type", "application/json")
+
+	finishResult, err := svc.FinishRegistration(context.Background(), user.ID, beginResult.FlowID, "", request)
+	require.NoError(t, err)
+	require.Equal(t, "Bitwarden Passkey", finishResult.FriendlyName)
+	require.NotNil(t, store.lastCreated)
+	require.Equal(t, "Bitwarden Passkey", store.lastCreated.FriendlyName)
+}
+
+func TestPasskeyService_FinishRegistration_UsesMetadataCacheFriendlyName(t *testing.T) {
+	fixedNow := time.Date(2026, 3, 29, 10, 56, 0, 0, time.UTC)
+	svc, _, store, webauthnClient, user := newPasskeyEnrollmentServiceForTest(t, fixedNow)
+	require.NoError(t, svc.recentAuthService.IssueRecentAuth(context.Background(), user.ID, RecentAuthMethodPassword))
+
+	metadataAAGUID := uuid.MustParse("11111111-2222-4333-8444-555555555555")
+	svc.SetPasskeyAAGUIDMetadataCache(NewStaticPasskeyAAGUIDMetadataCache(map[string]string{
+		metadataAAGUID.String(): "FIDO Metadata Security Key",
+	}))
+
+	webauthnClient.finishCredential = &webauthn.Credential{
+		ID:        []byte("metadata-credential-id"),
+		PublicKey: []byte("metadata-public-key"),
+		Authenticator: webauthn.Authenticator{
+			AAGUID: metadataAAGUID[:],
+		},
+	}
+
+	beginResult, err := svc.BeginRegistration(context.Background(), user.ID)
+	require.NoError(t, err)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/auth/passkeys/register/finish", bytes.NewBufferString(`{"id":"credential"}`))
+	request.Header.Set("Content-Type", "application/json")
+
+	finishResult, err := svc.FinishRegistration(context.Background(), user.ID, beginResult.FlowID, "", request)
+	require.NoError(t, err)
+	require.Equal(t, "FIDO Metadata Security Key", finishResult.FriendlyName)
+	require.NotNil(t, store.lastCreated)
+	require.Equal(t, "FIDO Metadata Security Key", store.lastCreated.FriendlyName)
+}
+
 func TestPasskeyService_FinishRegistration_RejectsDuplicateCredential(t *testing.T) {
 	fixedNow := time.Date(2026, 3, 29, 11, 0, 0, 0, time.UTC)
 	existingCredential := &PasskeyCredentialRecord{
