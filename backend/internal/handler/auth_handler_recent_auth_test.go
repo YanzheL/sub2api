@@ -359,7 +359,7 @@ func TestAuthHandler_Login_IssuesRecentAuthMarker(t *testing.T) {
 		service.SettingKeyBackendModeEnabled: "false",
 	}}, newAuthHandlerConfig())
 	authSvc := service.NewAuthService(nil, userRepo, nil, nil, newAuthHandlerConfig(), settingSvc, nil, nil, nil, nil, nil)
-	userSvc := service.NewUserService(userRepo, nil, nil)
+	userSvc := service.NewUserService(userRepo, nil, nil, nil)
 	recentCache := newHandlerAuthStateCacheStub()
 	recentAuthSvc := service.NewRecentAuthService(recentCache)
 
@@ -408,7 +408,7 @@ func TestAuthHandler_Login2FA_IssuesRecentAuthMarker(t *testing.T) {
 	require.NoError(t, err)
 
 	authSvc := service.NewAuthService(nil, userRepo, nil, nil, newAuthHandlerConfig(), settingSvc, nil, nil, nil, nil, nil)
-	userSvc := service.NewUserService(userRepo, nil, nil)
+	userSvc := service.NewUserService(userRepo, nil, nil, nil)
 	recentCache := newHandlerAuthStateCacheStub()
 	recentAuthSvc := service.NewRecentAuthService(recentCache)
 
@@ -440,7 +440,7 @@ func TestAuthHandler_FinishPasskeyAuthentication_IssuesRecentAuthMarker(t *testi
 	}
 	settingSvc := service.NewSettingService(&authHandlerSettingRepoStub{values: setttingValues}, newAuthHandlerConfig())
 	authSvc := service.NewAuthService(nil, userRepo, nil, nil, newAuthHandlerConfig(), settingSvc, nil, nil, nil, nil, nil)
-	userSvc := service.NewUserService(userRepo, nil, nil)
+	userSvc := service.NewUserService(userRepo, nil, nil, nil)
 	recentCache := newHandlerAuthStateCacheStub()
 	recentAuthSvc := service.NewRecentAuthService(recentCache)
 
@@ -478,7 +478,7 @@ func TestAuthHandler_FinishPasskeyAuthentication_BackendModeRejectsNonAdmin(t *t
 	settings.BackendModeEnabled = true
 	require.NoError(t, settingSvc.UpdateSettings(context.Background(), settings))
 	authSvc := service.NewAuthService(nil, userRepo, nil, nil, newAuthHandlerConfig(), settingSvc, nil, nil, nil, nil, nil)
-	userSvc := service.NewUserService(userRepo, nil, nil)
+	userSvc := service.NewUserService(userRepo, nil, nil, nil)
 	recentCache := newHandlerAuthStateCacheStub()
 	recentAuthSvc := service.NewRecentAuthService(recentCache)
 
